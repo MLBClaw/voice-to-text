@@ -77,7 +77,13 @@ function initSpeechRecognition() {
             const transcript = event.results[i][0].transcript;
             
             if (event.results[i].isFinal) {
-                finalTranscript += transcript + ' ';
+                // 检查是否是语音指令
+                const command = checkVoiceCommand(transcript.trim());
+                if (command) {
+                    executeVoiceCommand(command, transcript.trim());
+                } else {
+                    finalTranscript += transcript + ' ';
+                }
             } else {
                 interimTranscript += transcript;
             }
@@ -872,6 +878,132 @@ async function sendViaHttp(text, host, port) {
         } catch (e2) {
             showToast('发送失败，请检查服务器和 CORS 设置');
             console.error('HTTP 发送失败:', e2);
+        }
+    }
+}
+
+// ==================== 语音指令功能 ====================
+
+// 语音指令列表
+const voiceCommands = {
+    // 删除全部
+    'delete_all': [
+        '删除全部', '全部删除', '清空', '清除全部', '全部清除',
+        '删掉全部', '全部删掉', '清空内容', '清除内容',
+        'delete all', 'clear all', '清空所有'
+    ],
+    // 删除最后一句
+    'delete_last': [
+        '删除最后一句', '删掉最后一句', '去掉最后一句', '清除最后一句',
+        '删除刚才那句', '删掉刚才那句', '刚才那句删掉', '刚才那句删除',
+        '撤销', '撤回', '上一步', 'delete last', 'undo'
+    ],
+    // 发送
+    'send': [
+        '发送', '发送文本', '发送到服务器', '发送出去',
+        'send', 'send text', 'transmit'
+    ],
+    // 停止录音
+    'stop': [
+        '停止', '停止录音', '结束', '结束录音', '关闭录音',
+        'stop', 'stop recording', 'end'
+    ]
+};
+
+// 检查是否是语音指令
+function checkVoiceCommand(text) {
+    // 清理标点符号
+    const cleanText = text.replace(/[。，！？.,!?]/g, '').trim().toLowerCase();
+    
+    for (const [command, phrases] of Object.entries(voiceCommands)) {
+        for (const phrase of phrases) {
+            if (cleanText.includes(phrase.toLowerCase())) {
+                return command;
+            }
+        }
+    }
+    return null;
+}
+
+// 执行语音指令
+function executeVoiceCommand(command, originalText) {
+    console.log('执行语音指令:', command, '- 原文:', originalText);
+    
+    switch (command) {
+        case 'delete_all':
+            // 延迟执行，让用户听到指令被识别
+            setTimeout(() => {
+                finalTranscript = '';
+                interimTranscript = '';
+                updateTranscriptDisplay();
+                showToast('🗑️ 已清空全部内容');
+            }, 500);
+            break;
+            
+        case 'delete_last':
+            setTimeout(() => {
+                deleteLastSentence();
+            }, 500);
+            break;
+            
+        case 'send':
+            setTimeout(() => {
+                if (isConnected) {
+                    sendText();
+                    showToast('📡 已发送');
+                } else {
+                    showToast('⚠️ 未连接到服务器');
+                }
+            }, 500);
+            break;
+            
+        case 'stop':
+            setTimeout(() => {
+                if (isRecording) {
+                    stopRecording();
+                }
+            }, 500);
+            break;
+    }
+}
+
+// 删除最后一句
+function deleteLastSentence() {
+    const text = finalTranscript.trim();
+    if (!text) {
+        showToast('没有内容可删除');
+        return;
+    }
+    
+    // 按标点符号分割句子
+    const sentences = text.split(/([。！？.!?]+)/);
+    let result = [];
+    
+    for (let i = 0; i < sentences.length; i++) {
+        const s = sentences[i].trim();
+        if (s && !/[。！？.!?]+/.test(s)) {
+            result.push(s);
+            // 如果有标点，也加上
+            if (i + 1 < sentences.length && /[。！？.!?]+/.test(sentences[i + 1])) {
+                result[result.length - 1] += sentences[i + 1];
+                i++;
+            }
+        }
+    }
+    
+    if (result.length > 0) {
+        result.pop(); // 删除最后一句
+        finalTranscript = result.join('') + ' ';
+        updateTranscriptDisplay();
+        showToast('🗑️ 已删除最后一句');
+    } else {
+        // 如果没有标点，按空格分割（英文等情况）
+        const words = text.split(/\s+/);
+        if (words.length > 0) {
+            words.pop();
+            finalTranscript = words.join(' ') + ' ';
+            updateTranscriptDisplay();
+            showToast('🗑️ 已删除最后一段');
         }
     }
 }
