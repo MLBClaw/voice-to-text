@@ -618,3 +618,290 @@ window.addEventListener('beforeunload', (e) => {
         e.returnValue = '正在录音中，确定要离开吗？';
     }
 });
+
+// ==================== TCP/WebSocket/HTTP 发送功能 ====================
+
+// 连接相关变量
+let wsConnection = null;
+let currentProtocol = 'websocket';
+let isConnected = false;
+
+// 切换协议
+function switchProtocol(protocol) {
+    currentProtocol = protocol;
+    
+    // 更新标签样式
+    document.querySelectorAll('.protocol-tab').forEach(tab => tab.classList.remove('active'));
+    document.getElementById(`tab-${protocol}`).classList.add('active');
+    
+    // 断开现有连接
+    if (wsConnection) {
+        disconnectServer();
+    }
+    
+    showToast(`已切换到 ${protocol.toUpperCase()} 模式`);
+}
+
+// 连接到服务器
+async function connectServer() {
+    const host = document.getElementById('serverHost').value.trim();
+    const port = document.getElementById('serverPort').value.trim();
+    
+    if (!host) {
+        showToast('请输入服务器地址');
+        return;
+    }
+    
+    if (currentProtocol === 'websocket') {
+        connectWebSocket(host, port);
+    } else {
+        // HTTP 模式不需要持续连接
+        testHttpConnection(host, port);
+    }
+}
+
+// WebSocket 连接
+function connectWebSocket(host, port) {
+    const portStr = port ? `:${port}` : '';
+    const wsUrl = `wss://${host}${portStr}`;
+    
+    showToast('正在连接...');
+    
+    try {
+        wsConnection = new WebSocket(wsUrl);
+        
+        wsConnection.onopen = () => {
+            isConnected = true;
+            updateConnectionStatus(true);
+            showToast('WebSocket 连接成功');
+            document.getElementById('sendSection').style.display = 'block';
+        };
+        
+        wsConnection.onclose = () => {
+            isConnected = false;
+            updateConnectionStatus(false);
+            showToast('连接已断开');
+            document.getElementById('sendSection').style.display = 'none';
+        };
+        
+        wsConnection.onerror = (error) => {
+            console.error('WebSocket 错误:', error);
+            showToast('连接失败，请检查地址和端口');
+            isConnected = false;
+            updateConnectionStatus(false);
+        };
+        
+        wsConnection.onmessage = (event) => {
+            console.log('收到服务器消息:', event.data);
+            showToast(`服务器回复: ${event.data}`);
+        };
+        
+    } catch (e) {
+        console.error('创建 WebSocket 失败:', e);
+        showToast('连接失败: ' + e.message);
+    }
+}
+
+// 测试 HTTP 连接
+testHttpConnection = async (host, port) => {
+    const portStr = port ? `:${port}` : '';
+    const url = `https://${host}${portStr}/health`;
+    
+    showToast('测试连接...');
+    
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            signal: controller.signal,
+            mode: 'no-cors'
+        });
+        
+        clearTimeout(timeoutId);
+        
+        // 由于 CORS 限制，这里只要没有抛出错误就算成功
+        isConnected = true;
+        updateConnectionStatus(true);
+        showToast('HTTP 服务器可访问');
+        document.getElementById('sendSection').style.display = 'block';
+        
+    } catch (e) {
+        // 可能是 CORS 问题，但服务器仍可能存在
+        isConnected = true;
+        updateConnectionStatus(true);
+        showToast('HTTP 模式已准备（可能受 CORS 限制）');
+        document.getElementById('sendSection').style.display = 'block';
+    }
+};
+
+// 断开连接
+function disconnectServer() {
+    if (wsConnection) {
+        wsConnection.close();
+        wsConnection = null;
+    }
+    isConnected = false;
+    updateConnectionStatus(false);
+    document.getElementById('sendSection').style.display = 'none';
+    showToast('已断开连接');
+}
+
+// 更新连接状态显示
+function updateConnectionStatus(connected) {
+    const statusEl = document.getElementById('connectionStatus');
+    const dotEl = document.getElementById('statusDot');
+    const textEl = document.getElementById('statusText');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    
+    if (connected) {
+        statusEl.classList.remove('disconnected');
+        statusEl.classList.add('connected');
+        dotEl.classList.remove('disconnected');
+        dotEl.classList.add('connected');
+        textEl.textContent = '已连接';
+        connectBtn.style.display = 'none';
+        disconnectBtn.style.display = 'inline-block';
+    } else {
+        statusEl.classList.remove('connected');
+        statusEl.classList.add('disconnected');
+        dotEl.classList.remove('connected');
+        dotEl.classList.add('disconnected');
+        textEl.textContent = '未连接';
+        connectBtn.style.display = 'inline-block';
+        disconnectBtn.style.display = 'none';
+    }
+}
+
+// 发送文本
+async function sendText() {
+    const text = (finalTranscript + interimTranscript).trim();
+    
+    if (!text) {
+        showToast('没有内容可发送');
+        return;
+    }
+    
+    const host = document.getElementById('serverHost').value.trim();
+    const port = document.getElementById('serverPort').value.trim();
+    
+    if (!host) {
+        showToast('请输入服务器地址');
+        return;
+    }
+    
+    if (currentProtocol === 'websocket') {
+        sendViaWebSocket(text);
+    } else {
+        await sendViaHttp(text, host, port);
+    }
+}
+
+// 通过 WebSocket 发送
+function sendViaWebSocket(text) {
+    if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+        showToast('WebSocket 未连接');
+        return;
+    }
+    
+    const data = {
+        type: 'speech',
+        text: text,
+        timestamp: new Date().toISOString(),
+        language: settings.language
+    };
+    
+    try {
+        wsConnection.send(JSON.stringify(data));
+        showToast('✓ 已发送到服务器');
+    } catch (e) {
+        showToast('发送失败: ' + e.message);
+    }
+}
+
+// 通过 HTTP 发送
+async function sendViaHttp(text, host, port) {
+    const portStr = port ? `:${port}` : '';
+    const url = `https://${host}${portStr}/api/text`;
+    
+    const data = {
+        text: text,
+        timestamp: new Date().toISOString(),
+        language: settings.language,
+        source: 'voice-to-text-app'
+    };
+    
+    try {
+        showToast('正在发送...');
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            showToast('✓ 已发送到服务器');
+        } else {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+    } catch (e) {
+        console.error('发送失败:', e);
+        
+        // 尝试 HTTP (非 HTTPS)
+        try {
+            const httpUrl = `http://${host}${portStr}/api/text`;
+            const response = await fetch(httpUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (response.ok) {
+                showToast('✓ 已发送到服务器 (HTTP)');
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (e2) {
+            showToast('发送失败，请检查服务器和 CORS 设置');
+            console.error('HTTP 发送失败:', e2);
+        }
+    }
+}
+
+// 加载保存的服务器设置
+function loadServerSettings() {
+    const saved = localStorage.getItem('vtt_server');
+    if (saved) {
+        const server = JSON.parse(saved);
+        document.getElementById('serverHost').value = server.host || '';
+        document.getElementById('serverPort').value = server.port || '';
+    }
+}
+
+// 保存服务器设置
+function saveServerSettings() {
+    const server = {
+        host: document.getElementById('serverHost').value,
+        port: document.getElementById('serverPort').value,
+        protocol: currentProtocol
+    };
+    localStorage.setItem('vtt_server', JSON.stringify(server));
+}
+
+// 监听输入变化，自动保存
+setInterval(() => {
+    if (document.getElementById('serverHost')) {
+        saveServerSettings();
+    }
+}, 5000);
+
+// 页面加载时恢复设置
+loadServerSettings();
