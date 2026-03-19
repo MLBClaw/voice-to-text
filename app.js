@@ -16,6 +16,13 @@ let microphone = null;
 let volumeDataArray = null;
 let autoSaveTimer = null;
 
+// 文本编辑相关
+let selectedText = '';
+let selectedTextRange = null;
+let isReplaceMode = false;
+let replaceStartIndex = -1;
+let replaceEndIndex = -1;
+
 // 设置
 let settings = {
     language: 'zh-CN',
@@ -77,12 +84,18 @@ function initSpeechRecognition() {
             const transcript = event.results[i][0].transcript;
             
             if (event.results[i].isFinal) {
-                // 检查是否是语音指令
-                const command = checkVoiceCommand(transcript.trim());
-                if (command) {
-                    executeVoiceCommand(command, transcript.trim());
+                // 检查是否处于替换模式
+                if (isReplaceMode) {
+                    executeReplace(transcript.trim());
+                    isReplaceMode = false;
                 } else {
-                    finalTranscript += transcript + ' ';
+                    // 检查是否是语音指令
+                    const command = checkVoiceCommand(transcript.trim());
+                    if (command) {
+                        executeVoiceCommand(command, transcript.trim());
+                    } else {
+                        finalTranscript += transcript + ' ';
+                    }
                 }
             } else {
                 interimTranscript += transcript;
@@ -1037,3 +1050,146 @@ setInterval(() => {
 
 // 页面加载时恢复设置
 loadServerSettings();
+
+// ==================== 文本选择和重新录音替换功能 ====================
+
+// 初始化文本选择功能
+function initTextSelection() {
+    const content = document.getElementById('transcriptContent');
+    
+    content.addEventListener('mouseup', handleTextSelection);
+    content.addEventListener('touchend', handleTextSelection);
+}
+
+// 处理文本选择
+function handleTextSelection() {
+    const selection = window.getSelection();
+    const text = selection.toString().trim();
+    
+    if (text && text.length > 0) {
+        selectedText = text;
+        showReplaceButton();
+    } else {
+        hideReplaceButton();
+    }
+}
+
+// 显示替换按钮
+function showReplaceButton() {
+    let btn = document.getElementById('replaceBtn');
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'replaceBtn';
+        btn.className = 'action-btn success';
+        btn.innerHTML = '🎙️ 重新录音替换选中的文字';
+        btn.style.cssText = 'margin-top: 10px; width: 100%;';
+        btn.onclick = startReplaceMode;
+        
+        const section = document.querySelector('.transcript-section');
+        section.appendChild(btn);
+    }
+    btn.style.display = 'flex';
+}
+
+// 隐藏替换按钮
+function hideReplaceButton() {
+    const btn = document.getElementById('replaceBtn');
+    if (btn) {
+        btn.style.display = 'none';
+    }
+}
+
+// 开始替换模式
+function startReplaceMode() {
+    if (!selectedText) {
+        showToast('请先选择要替换的文字');
+        return;
+    }
+    
+    // 保存选中的文本位置信息
+    const content = document.getElementById('transcriptContent');
+    const fullText = finalTranscript;
+    
+    // 找到选中文本在全文中的位置
+    replaceStartIndex = fullText.indexOf(selectedText);
+    if (replaceStartIndex === -1) {
+        showToast('无法定位选中的文字');
+        return;
+    }
+    replaceEndIndex = replaceStartIndex + selectedText.length;
+    
+    isReplaceMode = true;
+    
+    // 高亮显示要替换的部分
+    highlightSelectedText();
+    
+    // 显示提示
+    showToast(`🎙️ 请重新录音，将替换 "${selectedText.substring(0, 20)}${selectedText.length > 20 ? '...' : ''}"`);
+    
+    // 自动开始录音
+    if (!isRecording) {
+        setTimeout(() => {
+            startRecordingForReplace();
+        }, 500);
+    }
+}
+
+// 高亮选中的文本
+function highlightSelectedText() {
+    const content = document.getElementById('transcriptContent');
+    const before = finalTranscript.substring(0, replaceStartIndex);
+    const selected = finalTranscript.substring(replaceStartIndex, replaceEndIndex);
+    const after = finalTranscript.substring(replaceEndIndex);
+    
+    content.innerHTML = escapeHtml(before) + 
+        '<mark style="background: #fef08a; padding: 2px 4px; border-radius: 4px;">' + escapeHtml(selected) + '</mark>' + 
+        escapeHtml(after);
+}
+
+// 为替换而开始录音
+function startRecordingForReplace() {
+    interimTranscript = '';
+    
+    // 更新设置
+    recognition.lang = settings.language;
+    recognition.continuous = false; // 替换模式不连续，录完就停
+    
+    try {
+        recognition.start();
+        showToast('🎙️ 请说出替换内容...');
+    } catch (e) {
+        showToast('启动失败，请重试');
+        console.error(e);
+    }
+}
+
+// 执行替换
+function executeReplace(newText) {
+    if (replaceStartIndex === -1 || !newText) return;
+    
+    const before = finalTranscript.substring(0, replaceStartIndex);
+    const after = finalTranscript.substring(replaceEndIndex);
+    
+    finalTranscript = before + newText + ' ' + after;
+    
+    updateTranscriptDisplay();
+    showToast('✅ 已替换完成');
+    
+    // 重置状态
+    isReplaceMode = false;
+    replaceStartIndex = -1;
+    replaceEndIndex = -1;
+    selectedText = '';
+    hideReplaceButton();
+    
+    // 清除选择
+    window.getSelection().removeAllRanges();
+}
+
+// 修改语音识别结果处理，支持替换模式
+const originalOnResult = recognition ? recognition.onresult : null;
+
+// 在初始化后设置文本选择
+setTimeout(() => {
+    initTextSelection();
+}, 1000);
