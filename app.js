@@ -909,7 +909,17 @@ const voiceCommands = {
     'delete_last': [
         '删除最后一句', '删掉最后一句', '去掉最后一句', '清除最后一句',
         '删除刚才那句', '删掉刚才那句', '刚才那句删掉', '刚才那句删除',
-        '撤销', '撤回', '上一步', 'delete last', 'undo'
+        'delete last', 'undo'
+    ],
+    // 回退一个字（Backspace）
+    'backspace': [
+        '回退', '回退一个字', '撤回一个字', '删除一个字', '删掉一个字',
+        '退格', '后退', '后退一个', '后退一个字', '退一个', '退一个字',
+        'backspace', 'delete one', 'remove one'
+    ],
+    // 撤销（用于兼容，实际功能与 delete_last 相同）
+    'undo': [
+        '撤销', '撤回', '上一步'
     ],
     // 发送
     'send': [
@@ -954,6 +964,18 @@ function executeVoiceCommand(command, originalText) {
             break;
             
         case 'delete_last':
+            setTimeout(() => {
+                deleteLastSentence();
+            }, 500);
+            break;
+            
+        case 'backspace':
+            setTimeout(() => {
+                backspaceOneChar();
+            }, 500);
+            break;
+            
+        case 'undo':
             setTimeout(() => {
                 deleteLastSentence();
             }, 500);
@@ -1019,6 +1041,46 @@ function deleteLastSentence() {
             showToast('🗑️ 已删除最后一段');
         }
     }
+}
+
+// 回退一个字（Backspace）
+function backspaceOneChar() {
+    const text = finalTranscript;
+    if (!text || text.length === 0) {
+        showToast('没有内容可删除');
+        return;
+    }
+    
+    // 移除末尾的空格
+    let trimmed = text;
+    while (trimmed.endsWith(' ')) {
+        trimmed = trimmed.slice(0, -1);
+    }
+    
+    if (trimmed.length === 0) {
+        finalTranscript = '';
+        updateTranscriptDisplay();
+        showToast('⌫ 已删除空格');
+        return;
+    }
+    
+    // 删除最后一个字符
+    // 检查是否是 Emoji（4字节）
+    const lastCode = trimmed.charCodeAt(trimmed.length - 1);
+    let deleteCount = 1;
+    
+    // 如果是代理对的后半部分（Emoji），需要删除2个字符
+    if (lastCode >= 0xDC00 && lastCode <= 0xDFFF && trimmed.length >= 2) {
+        deleteCount = 2;
+    }
+    
+    const deleted = trimmed.slice(-deleteCount);
+    finalTranscript = trimmed.slice(0, -deleteCount) + ' ';
+    updateTranscriptDisplay();
+    
+    // 显示删除的字符
+    const displayChar = deleted.length > 1 ? deleted : deleted;
+    showToast(`⌫ 已删除 "${displayChar}"`);
 }
 
 // 加载保存的服务器设置
