@@ -89,6 +89,39 @@
             font-style: italic;
         }
 
+        /* 语音指令提示 */
+        .voice-commands {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 1px solid #f59e0b;
+            border-radius: 10px;
+            padding: 12px;
+            margin-top: 10px;
+            font-size: 13px;
+            color: #92400e;
+        }
+
+        .voice-commands-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .voice-command-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .voice-command-tag {
+            background: rgba(255,255,255,0.8);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            border: 1px solid #fbbf24;
+        }
+
         .transcript-content.interim {
             color: #666;
         }
@@ -702,6 +735,18 @@
                     <button class="action-btn" onclick="shareText()">📤 分享</button>
                     <button class="action-btn primary" onclick="saveTranscript()">💾 保存</button>
                     <button class="action-btn" onclick="clearTranscript()">🗑️ 清空</button>
+                </div>
+                <!-- 语音指令提示 -->
+                <div class="voice-commands">
+                    <div class="voice-commands-title">🎙️ 语音指令（说出以下指令即可执行）</div>
+                    <div class="voice-command-list">
+                        <span class="voice-command-tag">"清空"</span>
+                        <span class="voice-command-tag">"删除全部"</span>
+                        <span class="voice-command-tag">"删除最后一句"</span>
+                        <span class="voice-command-tag">"撤销"</span>
+                        <span class="voice-command-tag">"发送"</span>
+                        <span class="voice-command-tag">"停止"</span>
+                    </div>
                 </div>
             </div>
 
